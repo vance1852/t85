@@ -96,11 +96,11 @@ type Student struct {
 
 type Enrollment struct {
 	ID          uint      `gorm:"primaryKey" json:"id"`
-	StudentID   uint      `gorm:"index" json:"student_id"`
-	ScheduleID  uint      `gorm:"index" json:"schedule_id"`
+	StudentID   uint      `gorm:"index:idx_student_schedule,priority:1;index" json:"student_id"`
+	ScheduleID  uint      `gorm:"index:idx_student_schedule,priority:2;index" json:"schedule_id"`
 	CourseID    uint      `gorm:"index" json:"course_id"`
 	EnrollType  string    `gorm:"size:16" json:"enroll_type"`
-	Status      string    `gorm:"size:16" json:"status"`
+	Status      string    `gorm:"size:16;index" json:"status"`
 	WaitlistPos int       `json:"waitlist_pos"`
 	PricePaid   float64   `json:"price_paid"`
 	RefundAmount float64  `json:"refund_amount"`

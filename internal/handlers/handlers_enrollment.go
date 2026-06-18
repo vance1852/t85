@@ -157,7 +157,16 @@ func (h *Handler) EnrollStudent(c *gin.Context) {
 		return
 	}
 
+	unlock := h.lockSchedule(req.ScheduleID)
+	defer unlock()
+
 	tx := h.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
 	var schedule models.Schedule
 	if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&schedule, req.ScheduleID).Error; err != nil {
 		tx.Rollback()
@@ -170,17 +179,25 @@ func (h *Handler) EnrollStudent(c *gin.Context) {
 		return
 	}
 
-	var existing models.Enrollment
-	err := tx.Where("student_id = ? AND schedule_id = ? AND status IN ?",
-		req.StudentID, req.ScheduleID, []string{"enrolled", "waitlisted"}).First(&existing).Error
-	if err == nil {
+	var existingCount int64
+	tx.Model(&models.Enrollment{}).
+		Set("gorm:query_option", "LOCK IN SHARE MODE").
+		Where("student_id = ? AND schedule_id = ? AND status IN ?",
+			req.StudentID, req.ScheduleID,
+			[]string{"enrolled", "waitlisted", "transferred", "from_waitlist"}).
+		Count(&existingCount)
+	if existingCount > 0 {
 		tx.Rollback()
 		c.JSON(http.StatusConflict, gin.H{"detail": "该学员已报名或在候补名单中"})
 		return
 	}
 
 	var course models.Course
-	tx.First(&course, schedule.CourseID)
+	if err := tx.First(&course, schedule.CourseID).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusNotFound, gin.H{"detail": "关联课程不存在"})
+		return
+	}
 
 	price := req.PricePaid
 	if price <= 0 {
@@ -198,6 +215,7 @@ func (h *Handler) EnrollStudent(c *gin.Context) {
 	if schedule.Enrolled >= schedule.Capacity {
 		var maxPos int
 		tx.Model(&models.Enrollment{}).
+			Set("gorm:query_option", "FOR UPDATE").
 			Where("schedule_id = ? AND status = ?", req.ScheduleID, "waitlisted").
 			Select("COALESCE(MAX(waitlist_pos),0)").Scan(&maxPos)
 		enroll.Status = "waitlisted"
@@ -205,21 +223,25 @@ func (h *Handler) EnrollStudent(c *gin.Context) {
 		enroll.EnrollType = "waitlist"
 	} else {
 		schedule.Enrolled++
-		enroll.EnrollType = course.CourseType
 		if err := tx.Save(&schedule).Error; err != nil {
 			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"detail": "更新排课失败"})
+			c.JSON(http.StatusInternalServerError, gin.H{"detail": "更新排课容量失败: " + err.Error()})
 			return
 		}
+		enroll.EnrollType = course.CourseType
 	}
 
 	if err := tx.Create(&enroll).Error; err != nil {
 		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"detail": "报名失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "写入报名失败: " + err.Error()})
 		return
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": "提交事务失败: " + err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusCreated, gin.H{
 		"enrollment": enroll,
 		"enrolled":   enroll.Status == "enrolled",
@@ -425,7 +447,7 @@ func (h *Handler) SessionsByStudent(c *gin.Context) {
 }
 
 func (h *Handler) SchedulesByStudent(c *gin.Context) {
-	studentID, err := strconv.ParseUint(c.Param("student_id"), 10, 64)
+	studentID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"detail": "学员ID不合法"})
 		return

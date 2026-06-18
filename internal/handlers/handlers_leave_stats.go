@@ -143,11 +143,14 @@ func (h *Handler) ApproveLeave(c *gin.Context) {
 				e2.ID = 0
 				e2.ScheduleID = *foundSub
 				e2.Status = "transferred"
+				e2.WaitlistPos = 0
+				e2.CheckedIn = false
+				e2.CheckedInAt = nil
 				tx.Create(&e2)
 			}
 			tx.Model(&models.Enrollment{}).
 				Where("schedule_id = ? AND status = ?", s.ID, "enrolled").
-				Updates(map[string]interface{}{"status": "transferred"})
+				Updates(map[string]interface{}{"status": "transferred_out"})
 		}
 
 		oldStatus := s.Status
@@ -276,6 +279,9 @@ func (h *Handler) RescheduleClass(c *gin.Context) {
 					e.Status = "refund_pending"
 					e.RefundAmount = e.PricePaid
 					tx.Save(&e)
+				} else {
+					e.Status = "transferred_out"
+					tx.Save(&e)
 				}
 				continue
 			}
@@ -285,9 +291,13 @@ func (h *Handler) RescheduleClass(c *gin.Context) {
 			e2.Status = "transferred"
 			e2.CheckedIn = false
 			e2.CheckedInAt = nil
+			e2.WaitlistPos = 0
 			tx.Create(&e2)
 			newSched.Enrolled++
 			transferred++
+
+			e.Status = "transferred_out"
+			tx.Save(&e)
 		}
 		tx.Save(&newSched)
 
@@ -303,7 +313,7 @@ func (h *Handler) RescheduleClass(c *gin.Context) {
 		} else {
 			tx.Model(&models.Enrollment{}).
 				Where("schedule_id = ? AND status = ?", original.ID, "enrolled").
-				Update("status", "transferred")
+				Update("status", "transferred_out")
 		}
 	}
 
@@ -389,7 +399,7 @@ func (h *Handler) AttendanceRate(c *gin.Context) {
 		Joins("LEFT JOIN courses c ON s.course_id = c.id").
 		Joins("LEFT JOIN coaches co ON s.coach_id = co.id").
 		Joins("LEFT JOIN venues v ON s.venue_id = v.id").
-		Joins("LEFT JOIN enrollments e ON e.schedule_id = s.id AND e.status IN ('enrolled','transferred')").
+		Joins("LEFT JOIN enrollments e ON e.schedule_id = s.id AND e.status IN ('enrolled','transferred','from_waitlist')").
 		Group("s.id")
 	if df := c.Query("date_from"); df != "" {
 		q = q.Where("s.schedule_date >= ?", df)
@@ -442,7 +452,7 @@ func (h *Handler) CoachWorkload(c *gin.Context) {
 			         ELSE 0 END as attendance_rate,
 			    COALESCE(SUM(e.price_paid), 0) as estimated_income`).
 		Joins("LEFT JOIN coaches co ON s.coach_id = co.id").
-		Joins("LEFT JOIN enrollments e ON e.schedule_id = s.id AND e.status IN ('enrolled','transferred')").
+		Joins("LEFT JOIN enrollments e ON e.schedule_id = s.id AND e.status IN ('enrolled','transferred','from_waitlist')").
 		Where("s.status <> ?", "cancelled").
 		Group("s.coach_id")
 	if df := c.Query("date_from"); df != "" {
@@ -487,7 +497,7 @@ func (h *Handler) RevenueStats(c *gin.Context) {
 		Select("COALESCE(SUM(amount),0)").Scan(&result.BookingRevenue)
 
 	enrollQ := h.DB.Model(&models.Enrollment{}).
-		Where("status IN ?", []string{"enrolled", "transferred", "completed", "refunded"})
+		Where("status IN ?", []string{"enrolled", "transferred", "from_waitlist", "completed", "refunded"})
 	if df := c.Query("date_from"); df != "" {
 		enrollQ = enrollQ.Where("DATE(created_at) >= ?", df)
 	}
@@ -501,7 +511,7 @@ func (h *Handler) RevenueStats(c *gin.Context) {
 		Select("COALESCE(SUM(refund_amount),0)").Scan(&result.RefundAmount)
 
 	h.DB.Model(&models.Enrollment{}).
-		Where("status IN ?", []string{"enrolled", "transferred", "completed"}).
+		Where("status IN ?", []string{"enrolled", "transferred", "from_waitlist", "completed"}).
 		Count(&result.PaidCount)
 
 	h.DB.Model(&models.Enrollment{}).
@@ -514,20 +524,20 @@ func (h *Handler) RevenueStats(c *gin.Context) {
 	h.DB.Table("enrollments e").
 		Select(`c.course_type, COALESCE(SUM(e.price_paid),0) as revenue, COUNT(*) as enroll_count`).
 		Joins("LEFT JOIN courses c ON e.course_id = c.id").
-		Where("e.status IN ?", []string{"enrolled", "transferred", "completed", "refunded"}).
+		Where("e.status IN ?", []string{"enrolled", "transferred", "from_waitlist", "completed", "refunded"}).
 		Group("c.course_type").
 		Scan(&result.ByCourseType)
 
 	h.DB.Table("enrollments e").
 		Select(`c.sport_type, COALESCE(SUM(e.price_paid),0) as revenue`).
 		Joins("LEFT JOIN courses c ON e.course_id = c.id").
-		Where("e.status IN ?", []string{"enrolled", "transferred", "completed", "refunded"}).
+		Where("e.status IN ?", []string{"enrolled", "transferred", "from_waitlist", "completed", "refunded"}).
 		Group("c.sport_type").
 		Scan(&result.BySportType)
 
 	h.DB.Table(`(
 		SELECT DATE(created_at) as date, price_paid as amount FROM enrollments
-		WHERE status IN ('enrolled','transferred','completed','refunded')
+		WHERE status IN ('enrolled','transferred','from_waitlist','completed','refunded')
 		UNION ALL
 		SELECT DATE(created_at) as date, amount FROM bookings WHERE status <> 'cancelled'
 	) combined`).
@@ -552,7 +562,7 @@ func (h *Handler) EnrollmentDashboard(c *gin.Context) {
 	h.DB.Model(&models.Student{}).Count(&result.TotalStudents)
 	h.DB.Model(&models.Course{}).Where("status = ?", "active").Count(&result.TotalCourses)
 	h.DB.Model(&models.Schedule{}).Where("status IN ?", []string{"scheduled", "in_progress"}).Count(&result.ActiveSchedules)
-	h.DB.Model(&models.Enrollment{}).Where("status IN ?", []string{"enrolled", "transferred"}).Count(&result.TotalEnrollments)
+	h.DB.Model(&models.Enrollment{}).Where("status IN ?", []string{"enrolled", "transferred", "from_waitlist"}).Count(&result.TotalEnrollments)
 	h.DB.Model(&models.Enrollment{}).Where("status = ?", "waitlisted").Count(&result.WaitlistCount)
 	today := time.Now().Format("2006-01-02")
 	h.DB.Model(&models.Schedule{}).Where("schedule_date = ?", today).Count(&result.TodaySchedules)

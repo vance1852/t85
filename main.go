@@ -59,7 +59,7 @@ func main() {
 			secured.GET("/coaches/:id", h.GetCoach)
 			secured.PUT("/coaches/:id", h.UpdateCoach)
 			secured.DELETE("/coaches/:id", h.DeleteCoach)
-			secured.GET("/coaches/:coach_id/schedules", h.SchedulesByCoach)
+			secured.GET("/coaches/:id/schedules", h.SchedulesByCoach)
 
 			secured.GET("/courses", h.ListCourses)
 			secured.POST("/courses", h.CreateCourse)
@@ -76,7 +76,7 @@ func main() {
 			secured.PUT("/schedules/:id", h.UpdateSchedule)
 			secured.PATCH("/schedules/:id/status", h.UpdateScheduleStatus)
 			secured.DELETE("/schedules/:id", h.DeleteSchedule)
-			secured.GET("/venues/:venue_id/schedules", h.SchedulesByVenue)
+			secured.GET("/venues/:id/schedules", h.SchedulesByVenue)
 			secured.POST("/schedules/reschedule", h.RescheduleClass)
 
 			secured.GET("/students", h.ListStudents)
@@ -84,8 +84,8 @@ func main() {
 			secured.GET("/students/:id", h.GetStudent)
 			secured.PUT("/students/:id", h.UpdateStudent)
 			secured.DELETE("/students/:id", h.DeleteStudent)
-			secured.GET("/students/:student_id/schedules", h.SchedulesByStudent)
-			secured.GET("/students/:student_id/sessions", h.SessionsByStudent)
+			secured.GET("/students/:id/schedules", h.SchedulesByStudent)
+			secured.GET("/students/:id/sessions", h.SessionsByStudent)
 
 			secured.POST("/enrollments", h.EnrollStudent)
 			secured.POST("/enrollments/:id/cancel", h.CancelEnrollment)

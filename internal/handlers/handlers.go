@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -10,9 +11,16 @@ import (
 	"venue-booking-admin/internal/models"
 )
 
-// Handler 持有数据库句柄。
 type Handler struct {
-	DB *gorm.DB
+	DB            *gorm.DB
+	scheduleLocks sync.Map
+}
+
+func (h *Handler) lockSchedule(id uint) func() {
+	val, _ := h.scheduleLocks.LoadOrStore(id, &sync.Mutex{})
+	mu := val.(*sync.Mutex)
+	mu.Lock()
+	return func() { mu.Unlock() }
 }
 
 // ---------- 认证 ----------
@@ -256,11 +264,13 @@ func (h *Handler) DashboardStats(c *gin.Context) {
 	h.DB.Model(&models.Course{}).Where("status = ?", "active").Count(&courseTotal)
 	h.DB.Model(&models.Schedule{}).Where("status IN ?", []string{"scheduled", "in_progress"}).Count(&scheduleActive)
 	h.DB.Model(&models.Student{}).Count(&studentTotal)
-	h.DB.Model(&models.Enrollment{}).Where("status IN ?", []string{"enrolled", "transferred"}).Count(&enrollActive)
+	h.DB.Model(&models.Enrollment{}).Where("status IN ?",
+		[]string{"enrolled", "transferred", "from_waitlist"}).Count(&enrollActive)
 	h.DB.Model(&models.Enrollment{}).Where("status = ?", "waitlisted").Count(&waitlistTotal)
 
 	var courseRevenue, refundTotal float64
-	h.DB.Model(&models.Enrollment{}).Where("status IN ?", []string{"enrolled", "transferred", "completed", "refunded"}).
+	h.DB.Model(&models.Enrollment{}).Where("status IN ?",
+		[]string{"enrolled", "transferred", "from_waitlist", "completed", "refunded"}).
 		Select("COALESCE(SUM(price_paid),0)").Scan(&courseRevenue)
 	h.DB.Model(&models.Enrollment{}).Where("status = ?", "refunded").
 		Select("COALESCE(SUM(refund_amount),0)").Scan(&refundTotal)

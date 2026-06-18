@@ -238,7 +238,8 @@ func (h *Handler) UpdateScheduleStatus(c *gin.Context) {
 
 	if req.Status == "cancelled" && oldStatus != "cancelled" {
 		var enrollments []models.Enrollment
-		tx.Where("schedule_id = ? AND status = ?", s.ID, "enrolled").Find(&enrollments)
+		tx.Where("schedule_id = ? AND status IN ?", s.ID,
+			[]string{"enrolled", "transferred", "from_waitlist"}).Find(&enrollments)
 		for _, e := range enrollments {
 			e.Status = "refund_pending"
 			e.RefundAmount = e.PricePaid
@@ -416,7 +417,7 @@ func (h *Handler) BatchCreateSchedules(c *gin.Context) {
 }
 
 func (h *Handler) SchedulesByCoach(c *gin.Context) {
-	coachID, err := strconv.ParseUint(c.Param("coach_id"), 10, 64)
+	coachID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"detail": "教练ID不合法"})
 		return
