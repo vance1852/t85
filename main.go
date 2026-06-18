@@ -53,6 +53,60 @@ func main() {
 			secured.PATCH("/bookings/:id/status", h.UpdateBookingStatus)
 
 			secured.GET("/dashboard/stats", h.DashboardStats)
+
+			secured.GET("/coaches", h.ListCoaches)
+			secured.POST("/coaches", h.CreateCoach)
+			secured.GET("/coaches/:id", h.GetCoach)
+			secured.PUT("/coaches/:id", h.UpdateCoach)
+			secured.DELETE("/coaches/:id", h.DeleteCoach)
+			secured.GET("/coaches/:coach_id/schedules", h.SchedulesByCoach)
+
+			secured.GET("/courses", h.ListCourses)
+			secured.POST("/courses", h.CreateCourse)
+			secured.GET("/courses/:id", h.GetCourse)
+			secured.PUT("/courses/:id", h.UpdateCourse)
+			secured.DELETE("/courses/:id", h.DeleteCourse)
+
+			secured.GET("/schedules", h.ListSchedules)
+			secured.POST("/schedules", h.CreateSchedule)
+			secured.POST("/schedules/validate", h.ValidateSchedule)
+			secured.POST("/schedules/batch", h.BatchCreateSchedules)
+			secured.POST("/schedules/smart", h.SmartSchedule)
+			secured.GET("/schedules/:id", h.GetSchedule)
+			secured.PUT("/schedules/:id", h.UpdateSchedule)
+			secured.PATCH("/schedules/:id/status", h.UpdateScheduleStatus)
+			secured.DELETE("/schedules/:id", h.DeleteSchedule)
+			secured.GET("/venues/:venue_id/schedules", h.SchedulesByVenue)
+			secured.POST("/schedules/reschedule", h.RescheduleClass)
+
+			secured.GET("/students", h.ListStudents)
+			secured.POST("/students", h.CreateStudent)
+			secured.GET("/students/:id", h.GetStudent)
+			secured.PUT("/students/:id", h.UpdateStudent)
+			secured.DELETE("/students/:id", h.DeleteStudent)
+			secured.GET("/students/:student_id/schedules", h.SchedulesByStudent)
+			secured.GET("/students/:student_id/sessions", h.SessionsByStudent)
+
+			secured.POST("/enrollments", h.EnrollStudent)
+			secured.POST("/enrollments/:id/cancel", h.CancelEnrollment)
+			secured.POST("/enrollments/:id/checkin", h.CheckInStudent)
+			secured.POST("/enrollments/bulk-checkin", h.BulkCheckIn)
+			secured.POST("/enrollments/:id/refund", h.ProcessRefund)
+
+			secured.GET("/sessions", h.ListSessionUsages)
+			secured.POST("/sessions/consume", h.ConsumeSession)
+
+			secured.GET("/leaves", h.ListLeaves)
+			secured.POST("/leaves", h.CreateLeave)
+			secured.POST("/leaves/:id/approve", h.ApproveLeave)
+			secured.POST("/leaves/:id/reject", h.RejectLeave)
+
+			secured.GET("/schedule-adjustments", h.ListAdjustments)
+
+			secured.GET("/stats/attendance", h.AttendanceRate)
+			secured.GET("/stats/coach-workload", h.CoachWorkload)
+			secured.GET("/stats/revenue", h.RevenueStats)
+			secured.GET("/stats/enrollment-dashboard", h.EnrollmentDashboard)
 		}
 	}
 

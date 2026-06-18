@@ -194,6 +194,16 @@ func (h *Handler) CreateBooking(c *gin.Context) {
 		return
 	}
 
+	var scheduleConflict int64
+	h.DB.Model(&models.Schedule{}).
+		Where("venue_id = ? AND schedule_date = ? AND status <> ?", req.VenueID, req.BookDate, "cancelled").
+		Where("start_hour < ? AND end_hour > ?", req.EndHour, req.StartHour).
+		Count(&scheduleConflict)
+	if scheduleConflict > 0 {
+		c.JSON(http.StatusConflict, gin.H{"detail": "该时段已有课程安排"})
+		return
+	}
+
 	amount := venue.HourlyPrice * float64(req.EndHour-req.StartHour)
 	booking := models.Booking{
 		VenueID: req.VenueID, CustomerName: req.CustomerName, Phone: req.Phone,
@@ -237,16 +247,40 @@ func (h *Handler) DashboardStats(c *gin.Context) {
 	h.DB.Model(&models.Booking{}).Count(&bookingTotal)
 	h.DB.Model(&models.Booking{}).Where("status = ?", "booked").Count(&bookingActive)
 
-	var revenue float64
+	var bookingRevenue float64
 	h.DB.Model(&models.Booking{}).Where("status <> ?", "cancelled").
-		Select("COALESCE(SUM(amount),0)").Scan(&revenue)
+		Select("COALESCE(SUM(amount),0)").Scan(&bookingRevenue)
+
+	var coachTotal, courseTotal, scheduleActive, studentTotal, enrollActive, waitlistTotal int64
+	h.DB.Model(&models.Coach{}).Where("status = ?", "active").Count(&coachTotal)
+	h.DB.Model(&models.Course{}).Where("status = ?", "active").Count(&courseTotal)
+	h.DB.Model(&models.Schedule{}).Where("status IN ?", []string{"scheduled", "in_progress"}).Count(&scheduleActive)
+	h.DB.Model(&models.Student{}).Count(&studentTotal)
+	h.DB.Model(&models.Enrollment{}).Where("status IN ?", []string{"enrolled", "transferred"}).Count(&enrollActive)
+	h.DB.Model(&models.Enrollment{}).Where("status = ?", "waitlisted").Count(&waitlistTotal)
+
+	var courseRevenue, refundTotal float64
+	h.DB.Model(&models.Enrollment{}).Where("status IN ?", []string{"enrolled", "transferred", "completed", "refunded"}).
+		Select("COALESCE(SUM(price_paid),0)").Scan(&courseRevenue)
+	h.DB.Model(&models.Enrollment{}).Where("status = ?", "refunded").
+		Select("COALESCE(SUM(refund_amount),0)").Scan(&refundTotal)
 
 	c.JSON(http.StatusOK, gin.H{
-		"venue_total":     venueTotal,
-		"venue_open":      venueOpen,
-		"booking_total":   bookingTotal,
-		"booking_active":  bookingActive,
-		"revenue_total":   revenue,
+		"venue_total":      venueTotal,
+		"venue_open":       venueOpen,
+		"booking_total":    bookingTotal,
+		"booking_active":   bookingActive,
+		"booking_revenue":  bookingRevenue,
+		"coach_active":     coachTotal,
+		"course_active":    courseTotal,
+		"schedule_active":  scheduleActive,
+		"student_total":    studentTotal,
+		"enroll_active":    enrollActive,
+		"waitlist_total":   waitlistTotal,
+		"course_revenue":   courseRevenue,
+		"refund_total":     refundTotal,
+		"revenue_total":    bookingRevenue + courseRevenue,
+		"revenue_net":      bookingRevenue + courseRevenue - refundTotal,
 	})
 }
 
